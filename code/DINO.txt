@@ -1,0 +1,948 @@
+#include "zcommon.acs"
+#include "zdaemon.acs"
+
+/*	
+	Based on AF-Dinosaurpark.wad
+	If anything within the code is of use to you,
+	You can definitely use it aslong as you credit us.
+	
+	10-12-2020 - UberGewei & AF-Domains.net
+*/
+
+////////////////////////////////////////
+/*
+			=== DEFINES ===
+*/
+////////////////////////////////////////
+
+#define NULL					0
+#define NONE					0
+#define SELF					0
+
+#define SEC						35
+
+#define PLAYERTIDBASE			12000
+#define PATCHINFSPAWNSPOTTID	1000
+#define CAPTUREBOXTIDBASE		2000
+#define SPAWNSPOTTIDBASE		20000
+#define VEGETATIONTIDBASE		30000
+#define SNOWTIDBASE        		40000
+
+// -- Custom Spawn numbers -- 
+
+#define T_SNOWFLAKE				13
+
+// -- Gamemode settings --
+#define MAXPLAYERS				100
+#define MINPLAYERS				3
+#define MAXVEGETATION			20
+#define CVARMAXVEGETATION		100
+#define DEFAULTCAPTUREDIST		80
+
+#define DEFAULTBOXHEALTH		500
+#define DEFAULTDINOPERCENTAGE	4
+
+// -- Other settings --
+#define SNOWMAXHEIGHT   		500
+
+// -- HUD messages --
+#define GLOBAL_MSG1 			200     // X = 0.50 Y= 0.30
+#define GLOBAL_MSG2				201     // X = 0.50 Y= 0.20
+#define GLOBAL_MSG3				202     // X = 0.50 Y= 0.25
+
+#define DINO_MSG1				300		// X = 0.50 Y= 0.50
+
+#define MSG_DINOTARGETBASE		1000
+
+// -- Script numbers --
+
+#define PLAYR_RESPAWN			100
+#define PLAYR_DEATH				101
+#define PLAYR_RESETONDEATH		102		
+#define PLAYR_ENTER				103
+#define PLAYR_REENTER			104
+#define PLAYR_DISCONNECT		105
+
+#define DINO_MAIN				200
+#define DINO_SPAWNVEGETATION	201
+#define DINO_CAPTURE			202
+#define DINO_GAMETIME			203
+#define DINO_PLAYER				204
+#define DINO_BOXTRACKING		205
+#define DINO_CAUGHTCOUNTER		206
+#define DINO_DESTROYBOX			207
+#define DINO_DRAWDINOSONHUD		208
+#define DINO_RANDOMHINTS		209
+#define DINO_SPAWNPROTECTION	210
+#define DINO_SNOWCHECKER		211
+#define DINO_SNOWSPAWNER		212
+
+#define EXIT_DUMMY1				243
+#define EXIT_DUMMY2				244
+
+////////////////////////////////////////
+/*
+			=== VARIABLES ===
+*/
+////////////////////////////////////////
+
+int percentage = DEFAULTDINOPERCENTAGE;
+int dinoAmount;			// Total percentage of dinos
+int dinoCount;			// The amount of dinosaurs that have actually been selected
+int dinosCaught;
+
+bool spawnSnow = false;
+int snowSpeed = 5;
+int snowDrawdistance = 1000;
+int snowMinheight = 64;
+
+// second data entry is to store whether the dino is caught or not
+#define MAXDINODATA			4
+
+#define ISDINOSAUR 			1
+#define CAUGHT				2
+#define BOXHEALTH			3
+int dinosaurs[MAXPLAYERS][MAXDINODATA];
+
+int curSpawnspot = 0;
+int curVegetation = 0;
+
+Bool gameStarted = false;
+Bool timesUp = false;
+
+#define MAXVEGETATIONCLASSES 9
+Str Vegetation[MAXVEGETATIONCLASSES] = {
+	"TableShit1",
+	"TableShit2",
+	"TableShit3",
+	"TableShit4",
+	"TableShit5",
+	"TableShit6",
+	"TableShit7",
+	"TableShit8",
+	"Beast"
+};
+
+#define MAXWEAPONCLASSES 9
+Str Weapons[MAXWEAPONCLASSES] = {
+	"Fist",
+	"Pistol",
+	"Shotgun",
+	"Chaingun",
+	"SuperShotgun",
+	"RocketLauncher",
+	"PlasmaRifle",
+	"BFG9000",
+	"Chainsaw"
+};
+
+#define MAXEXITSTRINGS 9
+Str ExitStrings[MAXEXITSTRINGS] = {
+	"Forget it",
+	"Buzz off",
+	"Don't press this again!",
+	"AF-Domains.net is going to get you!",
+	"Now you've done it",
+	"Moron!",
+	"Stop that!",
+	"This is the button of DooM",
+	"Trying to call it quits?"
+};
+
+#define MAXHINTSTRINGS 4
+Str HintStrings[MAXHINTSTRINGS] = {
+	"You can release your teammate as a Reindeer by attacking his box!",
+	"When you are a Reindeer, you can destroy your box by jumping!",
+	"As a player you can block a Reindeer from destroying his box by standing on it!",
+	"As a Reindeer, run as fast as you can! Players can't keep up!",
+};
+
+////////////////////////////////////////
+/*
+			=== FUNCTIONS ===
+*/
+////////////////////////////////////////
+
+function int PlayerTag(int player)
+{
+	return (player+PLAYERTIDBASE);
+}
+
+function bool PlayerAlive(int player)
+{
+	// Note: disconnected players always return 0 health.
+	return (GetActorProperty(PlayerTag(player), APROP_Health) > 0);
+}
+
+function int abs(int x)
+{
+    if (x<0) return -x;
+    return x;
+}
+
+function int Distance(int object1, int object2)
+{
+	return ((abs(GetActorX(object1)-GetActorX(object2))>>16) +
+	        (abs(GetActorY(object1)-GetActorY(object2))>>16));
+}
+
+// Everyone except the dinosaurs.
+function int GetTotalPlayers(void)
+{
+	int TempPCount = 0;
+
+    for(int i = 0; i < PlayerTopIndex()+1; i++)
+    {
+        If(PlayerInGame(i) == true && !dinosaurs[i][ISDINOSAUR])
+			TempPCount++;
+    }
+	return TempPCount;
+}
+
+// Everyone except the dinosaurs.
+function int GetTotalDinosaurs(void)
+{
+	int TempPCount = 0;
+
+    for(int i = 0; i < PlayerTopIndex()+1; i++)
+    {
+        If(PlayerInGame(i) == true && dinosaurs[i][ISDINOSAUR])
+			TempPCount++;
+    }
+	return TempPCount;
+}
+
+function void BlastSurroundingPlayers(int dino) 
+{
+    for(int i = 0; i < PlayerTopIndex()+1; i++)
+    {
+        If(PlayerInGame(i) == true && !dinosaurs[i][ISDINOSAUR])
+        {
+			if(Distance(PlayerTag(dino), PlayerTag(i)) < 256)
+			{
+				ThrustThing(GetActorAngle(PlayerTag(i)) * 256 / 360 + 128, zd_rand(32, 128), 1, PlayerTag(i));
+				ThrustThingZ (PlayerTag(i), zd_rand(32, 128), 0, 1);
+			}
+        }
+    }
+}
+
+
+function void HudMessageOnActor(int own_tid, int tid, int msgID, int hudX, int hudY, int xOffset, int yOffset, int range, int isBoxed, int holdTime, str colour)
+{		
+	int dist, angle, vang, pitch, x, y;
+	
+    if (holdTime == 0) { holdTime = 0.1; }	
+    if (hudX == 0) { hudX = 640; } // Default value.
+    if (hudY == 0) { hudY = 480; } // Default value.
+	
+	SetFont("JENOBIG");	
+	SetHudSize(hudX, hudY, 1);
+	x = GetActorX(tid) - GetActorX(own_tid);
+	y = GetActorY(tid) - GetActorY(own_tid);
+	
+	vang = VectorAngle(x,y);
+	angle = (vang - GetActorAngle(own_tid) + 1.0) % 1.0;
+	
+    if(((vang+0.125)%0.5) > 0.25) dist = FixedDiv(y, sin(vang));
+    else dist = FixedDiv(x, cos(vang));
+	
+    if ((angle < 0.23 || angle > 0.85) && (dist >> 16) < range)
+    {
+		
+        if (GetActorPitch(own_tid) >= -0.5 && GetActorPitch(own_tid) <= 0.5)
+        {
+        pitch = VectorAngle(dist, GetActorZ(tid) - (GetActorZ(own_tid) + GetActorViewHeight(own_tid)));
+        pitch += FixedMul(GetActorPitch(own_tid), 1.2) % 1.0;
+ 
+            if ((hudX/2) * sin(angle) != 0 && cos(angle) != 0 && (hudX/2) * sin(pitch) != 0 && cos(pitch) != 0)
+            {
+				
+            x = hudX/2 - ((hudX/2) * sin(angle) / cos(angle));
+            y = hudY/2 - ((HUDX/2) * sin(pitch) / cos(pitch));
+				
+            x+=xOffset;
+            y+=yOffset;
+            
+				if(isBoxed)
+				{
+					HudMessage(s:"\caFree your teammate \cj", n:(tid-PLAYERTIDBASE)+1, s:"!"; HUDMSG_PLAIN, msgID, colour, (x << 16), (y << 16), holdTime);
+				}
+            }   
+        }	
+    }
+}
+
+////////////////////////////////////////
+/*
+         === PLAYER HANDLING ===
+*/
+////////////////////////////////////////
+
+script PLAYR_RESPAWN RESPAWN
+{
+    // This script must only call the script above. Do NOT add anything here.
+    ACS_executealways(PLAYR_REENTER, NONE);
+}
+
+script PLAYR_DEATH DEATH
+{
+    // This script is run on player death. It must only call the script below.
+    // Do not do anything else here and yet again never call this script.
+    int player = PlayerNumber();
+    ACS_ExecuteAlways(PLAYR_RESETONDEATH, NONE, player);
+}
+
+script PLAYR_ENTER ENTER
+{
+	// === ONE-TIME INIT HERE ===
+    // This script must only be called ONCE when the player
+    // spawns in the game for the first time.
+    // Use this script for two kinds of things:
+    // 1. Print a welcome message
+    // 2. Init scripts which do not care about the player dying
+    //    and which run as long as the player is on the server.
+    // Do not do anything else here and never call this script.
+    int player = PlayerNumber();
+    
+	SetFont("JENOBIG");
+    HudMessage(s:"\cfWelcome to Reindeer Hunting, \cj",n:SELF,s:"\cf!"; HUDMSG_FADEINOUT, 1, CR_RED, 0.5, 0.65, 2.0, 0.2, 0.2);
+}
+
+script PLAYR_REENTER ENTER
+{
+	// === EVERY [RE]ENTER INIT HERE ===
+    // This script is executed EACH TIME the player [re]spawns.
+    // Do not do anything else here and never call this script yourself.
+    
+    int player = PlayerNumber();
+	SetFont("JENOBIG");
+	
+	Delay(2);
+    Thing_ChangeTID(PlayerTag(player), NONE); // untag the corpse if present
+	Delay(1);
+	Thing_ChangeTID(SELF, PlayerTag(player)); // tag the player
+	
+	if(gameStarted) 
+	{
+		HudMessage(s:"\caYou joined too late!"; HUDMSG_FADEINOUT, 1, CR_RED, 0.5, 0.65, 2.0, 0.2, 0.2);
+		Thing_Damage(PlayerTag(player), 666, MOD_SUICIDE);
+	} 
+    Delay(5); // please keep it here
+	
+	ACS_ExecuteAlways(DINO_PLAYER, NONE);
+	ACS_ExecuteAlways(DINO_DESTROYBOX, NONE);
+	ACS_ExecuteAlways(DINO_SPAWNPROTECTION, NONE);
+
+	ACS_ExecuteAlways(DINO_SNOWCHECKER, NONE);	
+
+	for (int i = 0; i < MAXWEAPONCLASSES; i++)
+		TakeInventory(Weapons[i], 666);
+	
+	GiveInventory("CWeapMace", 666);
+	SetWeapon("CWeapMace");
+}
+
+script PLAYR_RESETONDEATH (int player)
+{
+	// === RESET ON DEATH HERE ===
+    // This script is supposed to be the central place where all player
+    // variables from other systems are reset when a player dies.
+	if(dinosaurs[player][ISDINOSAUR] && dinosaurs[player][CAUGHT] && dinosCaught > 0)
+	{
+		dinosaurs[player][CAUGHT] = false; 
+		dinosaurs[player][ISDINOSAUR] = false;
+		dinosCaught--;
+	}
+}
+
+
+script PLAYR_DISCONNECT (int player) DISCONNECT
+{
+	//  === RESET ON DISCONNECT HERE ===
+    // This script is run on player disconnection.
+    // First of all, a disconnect is also considered a death so it
+    // executes the same reset code as the death script above does. 
+    ACS_ExecuteAlways(PLAYR_RESETONDEATH, NONE, player);
+}
+
+////////////////////////////////////////
+/*
+			=== GAMEMODE ===
+*/
+////////////////////////////////////////
+
+script DINO_MAIN open
+{
+	bool PlayersSelected;
+	int RandPlayer = -1;
+	int i;
+	bool itsAwin = true;
+
+	SetFont("JENOBIG");
+
+	Log(s:"[Notification]: Run Reindeer Hunting in survival only!");
+	
+	
+	if(GetCvar("sv_reindeerdebug"))
+	{
+		If(ThingCount(0, SPAWNSPOTTIDBASE+curSpawnspot)) { Log(s:"[DEBUG]: Gamemode spawnpots detected!"); } else { Log(s:"[DEBUG]: No gamemode spawnpots detected!"); }
+		If(ThingCount(0, VEGETATIONTIDBASE+curVegetation)) { Log(s:"[DEBUG]: Vegetation spawned!"); } else { Log(s:"[DEBUG]: No vegetation spawned!"); }
+	}
+	
+	while(GetCvar("sv_noexit"))
+	{
+		HudMessageBold(s:"\cfNotice: sv_noexit set to true, cannot proceed.."; HUDMSG_FADEINOUT, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 0.5);	
+		delay(2*SEC);
+	}
+	
+	// Shall we make it snow?
+	spawnSnow = zd_rand(0, 1);
+	
+	if(spawnSnow)
+	{
+		snowSpeed = zd_rand(1,5);
+		
+		if(GetCvar("sv_reindeerdebug"))
+			Log(s:"[DEBUG]: spawnSnow: ", d:spawnSnow, s:" - snowSpeed: ", d:snowSpeed);
+	}
+
+    // Wait for mortals to join..
+    While(PlayerCount() < MINPLAYERS)
+    {
+		HudMessageBold(s:"\cfA minimum of \cj", d:MINPLAYERS, s:" \cfplayers are needed!"; HUDMSG_FADEINOUT, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 0.5);
+		delay(2*SEC);
+    }
+    
+    for (i=10; i > 0; i--)
+    {
+		HudMessageBold(s:"\cfGame starts in \cj", d:i, s:"\cf .."; HUDMSG_PLAIN, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 1.0);
+		AmbientSound("misc/beep", 127);
+		delay(1*SEC);
+    }
+
+	AmbientSound("misc/fight", 127);
+	
+	if(GetCvar("sv_reindeerpercentage") > 0 && GetCvar("sv_reindeerpercentage") <= 90) { percentage = GetCvar("sv_reindeerpercentage") / 10; }
+	
+	if(!GetCvar("sv_reindeerpercentage") && PlayerCount() <= 4) 
+	{ 
+		dinoAmount = 2; 
+		Log(s:"[Notification]: player count below or equal to 4, even-balancing activated!");
+	}
+	else
+	{
+		dinoAmount = PlayerCount() * percentage / 10;
+	}
+	
+	If(GetCvar("sv_reindeerdebug")) 
+	{ 
+		Log(s:"[DEBUG]: Reindeer percentage: ", d:percentage*10, s:"%"); 
+		Log(s:"[DEBUG]: Player/Reindeer ratio: ", d:PlayerCount()-dinoAmount, s:"/", d:dinoAmount);
+	}
+	
+	while(dinoCount < dinoAmount)
+	{
+		for(i = 0; i < dinoAmount; i++)
+		{
+			randPlayer = zd_rand(0, PlayerTopIndex()+1);
+		
+			if(!dinosaurs[randPlayer][ISDINOSAUR] && PlayerInGame(randPlayer) && dinoCount != dinoAmount) // Player's not a dino yet, proceed.
+			{
+				If(GetCvar("sv_reindeerdebug")) { Log(s:"[DEBUG]: Player: ", n:randPlayer+1, s:" selected as reindeer"); }
+				dinosaurs[randPlayer][ISDINOSAUR] = 1;
+				Log(s:"[Notification]: ", n:randPlayer+1, s:" is now a Reindeer!"); 
+				MorphActor(PlayerTag(randPlayer), "PigPlayer", "Pig", 1000000, 0, 0, 1);	
+				dinoCount++;
+				If(GetCvar("sv_reindeerdebug")) { Log(s:"[DEBUG]: dinoCount: ", d:dinoCount); }
+			}
+		}
+		delay(1);
+	}
+	
+	gameStarted = true;
+	
+	ACS_ExecuteAlways(DINO_GAMETIME, 0);
+	
+	if(GetCvar("sv_reindeerdebug")) 
+	{ 
+		Log(s:"[DEBUG]: GetTotalDinosaurs: ", d:GetTotalDinosaurs()); 
+		Log(s:"[DEBUG]: GetTotalPlayers: ", d:GetTotalPlayers()); 
+	}
+	
+	while(gameStarted)
+	{
+		if(dinosCaught == dinoCount && !timesUp)
+		{
+			HudMessageBold(s:"\cdAll Reindeer captured, \cjPLAYERS \cdwin!"; HUDMSG_FADEINOUT, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 5.0);
+			Delay(1*SEC);
+			gameStarted = false;
+			AmbientSound("misc/playerswin", 127);
+		}
+		
+		if(timesUp)
+		{
+			if(dinosCaught == 1 && dinoAmount == 2)
+			{
+				HudMessageBold(s:"\caIt's a draw!"; HUDMSG_FADEINOUT, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 5.0);
+				itsAwin = false;
+				gameStarted = false;
+				break;
+			}
+			else
+			{
+				HudMessageBold(s:"\cdTime's up! \cjReindeer \cdwin!"; HUDMSG_FADEINOUT, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 5.0);
+				AmbientSound("misc/dinosaurswin", 127);
+				gameStarted = false;
+			}
+			gameStarted = false;
+		}
+		
+		if(GetTotalDinosaurs() < 2)
+		{
+			HudMessageBold(s:"\cdReindeer(s) disappeared, \cjPLAYERS \cdwin!"; HUDMSG_FADEINOUT, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 5.0);
+			AmbientSound("misc/disappeared1", 127);
+			gameStarted = false;	
+		}
+		
+		if(GetTotalPlayers() < 1)
+		{
+			HudMessageBold(s:"\cdNot enough players left, \cjReindeer \cdwin!"; HUDMSG_FADEINOUT, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 5.0);
+			AmbientSound("misc/disappeared2", 127);
+			gameStarted = false;	
+		}
+		delay(1);
+	}
+	delay(1*SEC);
+	
+	if(itsAwin) { AmbientSound("misc/audienceclap", 127); } else { AmbientSound("misc/boo", 127); }
+	delay(5*SEC);
+	Exit_normal(0);
+}
+
+Script DINO_SPAWNVEGETATION (void)
+{
+	int maxVeg;
+
+	Thing_ChangeTID(0, SPAWNSPOTTIDBASE+curSpawnspot); 
+	maxVeg = zd_rand(5, MAXVEGETATION);
+	
+	if(GetCvar("sv_maxveg") > 0 && GetCvar("sv_maxveg") <= CVARMAXVEGETATION) { maxVeg = GetCvar("sv_maxveg"); }
+	
+	if(ThingCount(0, SPAWNSPOTTIDBASE+curSpawnspot))
+	{		
+		if(CheckActorCeilingTexture(SPAWNSPOTTIDBASE+curSpawnspot, "F_SKY1"))
+		{
+			for (int i = 0; i < maxVeg; i++)
+			{
+				SpawnProjectile(SPAWNSPOTTIDBASE+curSpawnspot, Vegetation[zd_rand(0, MAXVEGETATIONCLASSES)], (GetActorAngle(VEGETATIONTIDBASE) >> 8)+random(0, 255), random(50,255), 100, 10, VEGETATIONTIDBASE+curVegetation);
+				if(GetCvar("sv_reindeerdebug")) { Log(s:"[DEBUG]: vegatation ", d:VEGETATIONTIDBASE+curVegetation, s:" spawned: F_SKY1 detected!"); }
+				curVegetation++;
+			}
+		}
+		curSpawnspot++;
+	}
+}
+
+Script DINO_CAPTURE (void)
+{
+	int player = PlayerNumber();
+	int capturedist = DEFAULTCAPTUREDIST;
+	SetFont("JENOBIG");
+	
+	ThingSound(PlayerTag(player), "weapons/macehit", 100);
+
+	// Wait for the game to be started.
+	If(!gameStarted)
+	{
+		delay(1);
+		terminate;
+	}
+
+	if(PlayerAlive(player) && gameStarted)
+	{
+		if(GetCvar("sv_capturedist") > 0) { capturedist = GetCvar("sv_capturedist"); }
+		
+		for (int i = 0; i < PlayerTopIndex()+1; i++)
+		{
+			if(dinosaurs[i][ISDINOSAUR] && !dinosaurs[i][CAUGHT] && i != player && PlayerInGame(i)) // confirm if target is indeed a dinosaur
+			{			
+				if(Distance(PlayerTag(player), PlayerTag(i)) < capturedist)
+				{
+					if(GetCvar("sv_reindeerdebug")) { Log(s:"[DEBUG] Reindeer ", n:i+1, s:" is within reach ", n:player+1, s:"'s reach!"); }
+					HudMessageBold(s:"\cdReindeer \cj", n:i+1, s:" \cdcaptured by \cj", n:player+1, s:"\cd!"; HUDMSG_FADEINOUT, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 1.0);
+					SetActorProperty(PlayerTag(i), APROP_Speed, 0.0);
+					SpawnSpot("ZStalagmiteIceTiny", PlayerTag(i), CAPTUREBOXTIDBASE+i, 0);
+					AmbientSound("misc/dinosaurcaptured", 127);
+					dinosaurs[i][CAUGHT] = true;
+					dinosCaught++;
+				}
+			}
+		}
+	}
+}
+
+Script DINO_GAMETIME (void)
+{
+	Int gametime = 80;
+	SetFont("JENOBIG");
+
+	while(gameStarted)
+	{
+		if(GetCvar("sv_gametime") > 0)
+			gametime = GetCvar("sv_gametime");
+	
+		for (int i = gametime; i > 0; i--)
+		{
+			HudMessageBold(s:"\cfTime left: \cj", d:i/60, s:" : ", d:(i%60)/10, d:i%10, s:" . .";
+			0, GLOBAL_MSG2, CR_GOLD, 0.50, 0.20, 2.0); 
+			delay(1*SEC);
+		
+			if(i == 1)
+				timesUp = true;
+			
+			if(timesUp)
+				terminate;
+		}
+		delay(1);
+	}
+}
+
+Script DINO_PLAYER (void)
+{
+	int player = PlayerNumber();
+	int capturedist = DEFAULTCAPTUREDIST;
+	int i;
+	SetFont("JENOBIG");
+
+	// Wait for the game to be started.
+	While(!gameStarted)
+		Delay(1);
+	
+	// Now that the game has started terminate the script for non-dinos.
+	If(!dinosaurs[player][ISDINOSAUR])
+	{
+		if(GetCvar("sv_reindeerdebug")) { Log(s:"[DEBUG]: ", n:player+1, s:" is not a Reindeer, terminating script 204"); }
+		terminate;
+	}
+
+	while(PlayerAlive(player) && gameStarted)
+	{
+		if(GetCvar("sv_capturedist") > 0) { capturedist = GetCvar("sv_capturedist"); }
+		
+		for (i = 0; i < PlayerTopIndex()+1; i++)
+		{
+			if(i != player && PlayerInGame(i))
+			{
+				Client_ExecuteAlways(player, DINO_DRAWDINOSONHUD, 0, i, dinosaurs[i][CAUGHT]);
+			}
+		}
+		
+		if (GetPlayerInput(-1, INPUT_BUTTONS) & BT_ATTACK)
+		{
+			for (i = 0; i < PlayerTopIndex()+1; i++)
+			{		
+				if(i != player && PlayerInGame(i)) // confirm if target is not player himself and if target is indeed in game
+				{				
+					if(!dinosaurs[player][CAUGHT] && dinosaurs[i][ISDINOSAUR] && dinosaurs[i][CAUGHT]) // confirm if dinosaur is ingame, caught and that the player themself has not been caught
+					{
+						if(Distance(PlayerTag(player), PlayerTag(i)) < capturedist)
+						{
+							if(GetCvar("sv_reindeerdebug")) { Log(s:"[DEBUG] Reindeer ", n:i+1, s:" is within reach ", n:player+1, s:"'s reach!"); }
+							HudMessageBold(s:"\caReindeer \cj", n:i+1, s:" \careleased by \cj", n:player+1, s:"\ca!"; HUDMSG_FADEINOUT, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 1.0);
+							BlastSurroundingPlayers(i);
+							SetActorProperty(PlayerTag(i), APROP_Speed, 1.0);
+							Thing_Remove(CAPTUREBOXTIDBASE+i);
+							AmbientSound("misc/dinosaurreleased", 127);
+							dinosaurs[i][CAUGHT] = false;
+							dinosaurs[i][BOXHEALTH] = 0;
+							dinosCaught--;
+						}
+					}
+				}
+			}
+		}
+		delay(1);
+	}
+}
+
+Script DINO_BOXTRACKING open
+{	
+	Delay(2);
+	// Wait for the game to be started.
+	While(!gameStarted)
+		Delay(1);
+	
+	Delay(1*SEC);
+	
+	While(true)
+	{
+		for (int i = 0; i < PlayerTopIndex()+1; i++)
+		{		
+			if(dinosaurs[i][ISDINOSAUR] && dinosaurs[i][CAUGHT]) // confirm if target is indeed a dinosaur
+			{
+				If(ThingCount(0, CAPTUREBOXTIDBASE+i) > 0)
+					SetActorPosition(CAPTUREBOXTIDBASE+i, GetActorX(PlayerTag(i)), GetActorY(PlayerTag(i)), GetActorZ(PlayerTag(i)), 0);
+			}
+		}
+		delay(1);
+	}	
+}
+
+Script DINO_CAUGHTCOUNTER open
+{
+	Delay(1);
+	SetFont("JENOBIG");
+	
+	// Wait for the game to be started.
+	While(!gameStarted)
+		Delay(1);
+	
+	Delay(1*SEC);
+	
+	While(true)
+	{
+		HudMessageBold(s:"\cfReindeer Caught: \cj", d:dinosCaught, s:" / ", d:GetTotalDinosaurs(); HUDMSG_PLAIN, GLOBAL_MSG3, CR_WHITE, 0.5, 0.25, 1.0);
+		delay(15);
+	}
+}
+
+Script DINO_DESTROYBOX (void)
+{
+	int player = PlayerNumber();
+	int dmgMax = DEFAULTBOXHEALTH;
+	//int dmgCounter;
+	SetFont("JENOBIG");
+
+	delay(2);
+	// Wait for the game to be started.
+	While(!gameStarted)
+		Delay(1);
+	
+	delay(1);
+
+	while(PlayerAlive(player) && gameStarted)
+	{
+		if(GetCvar("sv_boxhealth") > 0)
+			dmgMax = GetCvar("sv_boxhealth");
+		
+		if (GetPlayerInput(-1, INPUT_BUTTONS) & BT_JUMP)
+		{
+			if(dinosaurs[player][ISDINOSAUR] && dinosaurs[player][CAUGHT])
+			{
+				If(GetActorZ(PlayerTag(player)) > GetActorFloorZ(PlayerTag(player)))
+				{
+					dinosaurs[player][BOXHEALTH]++;
+					HudMessage(s:"\cfBox health: ", d:dinosaurs[player][BOXHEALTH] / 10, s:" / ", d:dmgMax / 10; HUDMSG_PLAIN, DINO_MSG1, CR_WHITE, 0.5, 0.50, 1.0);
+					if(timer() % 15 == 0) { ThingSound(PlayerTag(player), "misc/dinosmackbox", 127); }
+					
+					if(dinosaurs[player][BOXHEALTH] > dmgMax)
+					{
+						HudMessage(s:"\cdYou broke free, RUN!!"; HUDMSG_FADEINOUT, DINO_MSG1, CR_WHITE, 0.5, 0.50, 1.0);
+						HudMessageBold(s:"\caReindeer \cj", n:player+1, s:" \careleased!"; HUDMSG_FADEINOUT, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 1.0);
+						BlastSurroundingPlayers(player);
+						SetActorProperty(PlayerTag(player), APROP_Speed, 1.0);
+						Thing_Remove(CAPTUREBOXTIDBASE+player);
+						AmbientSound("misc/dinosaurreleased", 127);
+						dinosaurs[player][CAUGHT] = false;
+						dinosCaught--;
+						dinosaurs[player][BOXHEALTH] = 0;
+						//dmgCounter = 0;
+					}
+				}
+			}
+		}
+		delay(1);
+	}
+}
+
+script DINO_DRAWDINOSONHUD (int target, int boxed)
+{
+	int player = PlayerNumber();
+
+	HudMessageOnActor(PlayerTag(player), PlayerTag(target), MSG_DINOTARGETBASE+target,  800, 600, 0, 0, 10000, boxed, 0, CR_WHITE);
+}
+
+script DINO_RANDOMHINTS open
+{
+	int randNum;
+
+	delay(1);
+
+	while(true)
+	{
+		randNum = zd_rand(0, 25);
+		
+		if(randNum == 10) {	Log(s:"[HINT]: ", s:HintStrings[zd_rand(0, MAXHINTSTRINGS-1)]);  Delay(10*SEC); }
+		delay(1*SEC);
+	}
+}
+
+script DINO_SPAWNPROTECTION (void)
+{
+	int player = PlayerNumber();
+	delay(2);
+	
+	// Wait for the game to be started.
+	While(!gameStarted)
+	{
+		SetActorProperty(PlayerTag(player), APROP_Health, 100);
+		Delay(1);	
+	}
+}
+
+script DINO_SNOWCHECKER (void)
+{
+	int player = PlayerNumber();
+	delay(2);
+	
+	while(PlayerInGame(player))
+    {  
+		if(spawnSnow || GetCvar("sv_forcesnowfall"))
+		{
+			if(PlayerInGame(player))
+				Client_Execute(PlayerNumber(), DINO_SNOWSPAWNER, 0, 0, 0, 0);
+
+		}
+	
+		Delay(snowspeed);
+	}
+}
+
+script DINO_SNOWSPAWNER (void)
+{
+	int x, y, z; 
+
+	for(int i = SNOWTIDBASE; i < SNOWTIDBASE + 30; i++)
+	{
+		x = GetActorX(0) + (ZD_rand(-snowDrawdistance, snowDrawdistance) << 16);
+		y = GetActorY(0) + (ZD_rand(-snowDrawdistance, snowDrawdistance) << 16);
+		z = GetActorZ(0) + (ZD_rand(snowMinheight, SNOWMAXHEIGHT) << 16);
+		//print(f:x, s:" ", f:y, s:" ", f:z);
+		Spawn("MapSpot", x, y, z, i, 0);
+		
+			if(CheckActorCeilingTexture(i, "F_SKY1"))
+				Thing_Projectile(i, T_SNOWFLAKE, 0, ZD_rand(0, 5), ZD_rand(-5, -30));
+				
+		Thing_Remove(i);
+	}
+}
+
+////////////////////////////////////////
+/*
+         === MUSIC PLAYER ===
+*/
+////////////////////////////////////////
+
+// Music player by Krawa
+
+#define MAXTRACKS 7	// 1 more than MUSXX
+
+str all_music[MAXTRACKS] = {"MUS00", 
+ "MUS01", "MUS02", "MUS03", "MUS04", "MUS05", 
+ "MUS06"};
+
+int rand;
+
+
+// manual music change
+script 601 (int track)
+{
+	if ((track > 0) && (track < MAXTRACKS))
+	{
+		SetMusic(all_music[0], 0);
+		Delay(35);
+		SetMusic(all_music[track], 0);
+	}
+	else
+		PrintBold(s:"DJ is a noob!");
+}
+
+//new music each map
+script 602 open
+{
+	Delay(2);
+	SetMusic(all_music[0], 0);
+	Delay(35);
+	rand = ZD_rand(2, MAXTRACKS);			// Don't play MUS00
+
+	if (!rand) rand = Random(2, MAXTRACKS);	// Non ZDaemon engines
+		SetMusic(all_music[rand - 1], 0);
+}
+
+//set music for entering players
+script 603 enter
+{
+	Delay(2 * 35);
+	SetMusic(all_music[rand - 1], 0);
+}
+
+////////////////////////////////////////
+/*
+		   === DEBUG CODE ===
+*/
+////////////////////////////////////////
+
+// End the game
+Script 900 (void)
+{
+	gameStarted = false;
+}
+
+Script 901 (int player)
+{
+	if(PlayerAlive(player))
+		PrintBold(s:"Player ", n:player+1, s:" is alive!");
+}
+
+Script 902 (int tag)
+{
+	if(GetActorProperty(tag, APROP_Health) > 0)
+		PrintBold(s:"Tag ", d:tag, s:" alive!");
+}
+
+script 903 (int data)
+{
+	for (int i = 0; i < PlayerTopIndex()+1; i++)
+	{		
+		if(data == 0 && dinosaurs[i][ISDINOSAUR] > 0) // confirm if target is indeed a dinosaur
+			Log(s:"[DEBUG]: ", n:i+1, s:": reindeer.");
+		
+		if(data == 1 && dinosaurs[i][CAUGHT] > 0) // confirm if target is indeed a dinosaur
+			Log(s:"[DEBUG]: ", n:i+1, s:": reindeer.");
+	}
+}
+
+script 904 (int player)
+{
+	if(dinosaurs[player][ISDINOSAUR] 
+		&& !dinosaurs[player][CAUGHT])
+	{
+		SetFont("JENOBIG");
+		HudMessageBold(s:"\cdReindeer \cj", n:player+1, s:" \cdcaptured!"; HUDMSG_FADEINOUT, GLOBAL_MSG1, CR_WHITE, 0.5, 0.30, 1.0);
+		SetActorProperty(PlayerTag(player), APROP_Speed, 0.0);
+		SpawnSpot("ZStalagmiteIceTiny", PlayerTag(player), CAPTUREBOXTIDBASE+player, 0);
+		AmbientSound("misc/dinosaurcaptured", 127);
+		dinosaurs[player][CAUGHT] = true;
+		dinosCaught++;
+	}
+	else
+		Log(s:"[INVALID PUKE ARGUMENT]: ", n:player+1, s:": is not a reindeer or has already been caught!");
+
+}
+
+////////////////////////////////////////
+/*
+		   === EXIT HANDLING ===
+*/
+////////////////////////////////////////
+
+Script EXIT_DUMMY1 (void)
+{
+	Print(s:ExitStrings[zd_rand(0, MAXEXITSTRINGS-1)]);
+}
+
+Script EXIT_DUMMY2 (void)
+{
+	Print(s:ExitStrings[zd_rand(0, MAXEXITSTRINGS-1)]);
+}
