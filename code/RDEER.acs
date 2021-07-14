@@ -22,10 +22,10 @@
 #define SEC						        35
 
 #define PLAYERTIDBASE			    12000
-#define PATCHINFSPAWNSPOTTID	1000
-#define CAPTUREBOXTIDBASE		  2000
-#define SPAWNSPOTTIDBASE		  20000
-#define VEGETATIONTIDBASE		  30000
+#define PATCHINFSPAWNSPOTTID		1000
+#define CAPTUREBOXTIDBASE		  	2000
+#define SPAWNSPOTTIDBASE		  	20000
+#define VEGETATIONTIDBASE		  	30000
 #define SNOWTIDBASE				    40000
 
 // -- Custom Spawn numbers --
@@ -36,11 +36,11 @@
 #define MAXPLAYERS				    100
 #define MINPLAYERS				    3
 #define MAXVEGETATION			    20
-#define CVARMAXVEGETATION		  100
-#define DEFAULTCAPTUREDIST		80
+#define CVARMAXVEGETATION		  	100
+#define DEFAULTCAPTUREDIST			80
 
 #define DEFAULTBOXHEALTH		  500
-#define DEFAULTDINOPERCENTAGE	4
+#define DEFAULTDINOPERCENTAGE		4
 
 // -- Other settings --
 #define SNOWMAXHEIGHT			    500
@@ -50,32 +50,32 @@
 #define GLOBAL_MSG2				    201		// X = 0.50 Y= 0.20
 #define GLOBAL_MSG3				    202		// X = 0.50 Y= 0.25
 
-#define DINO_MSG1				      300		// X = 0.50 Y= 0.50
+#define DINO_MSG1				    300		// X = 0.50 Y= 0.50
 
-#define MSG_DINOTARGETBASE		1000
+#define MSG_DINOTARGETBASE			1000
 
 // -- Script numbers --
 
 #define PLAYR_RESPAWN			    100
 #define PLAYR_DEATH				    101
-#define PLAYR_RESETONDEATH		102
+#define PLAYR_RESETONDEATH			102
 #define PLAYR_ENTER				    103
 #define PLAYR_REENTER			    104
-#define PLAYR_DISCONNECT		  105
+#define PLAYR_DISCONNECT		 	105
 
-#define DINO_MAIN				      200
-#define DINO_SPAWNVEGETATION	201
+#define DINO_MAIN				    200
+#define DINO_SPAWNVEGETATION		201
 #define DINO_CAPTURE			    202
 #define DINO_GAMETIME			    203
 #define DINO_PLAYER				    204
-#define DINO_BOXTRACKING		  205
-#define DINO_CAUGHTCOUNTER		206
-#define DINO_DESTROYBOX			  207
-#define DINO_DRAWDINOSONHUD		208
-#define DINO_RANDOMHINTS		  209
-#define DINO_SPAWNPROTECTION	210
-#define DINO_SNOWCHECKER		  211
-#define DINO_SNOWSPAWNER		  212
+#define DINO_BOXTRACKING		  	205
+#define DINO_CAUGHTCOUNTER			206
+#define DINO_DESTROYBOX			  	207
+#define DINO_DRAWDINOSONHUD			208
+#define DINO_RANDOMHINTS		  	209
+#define DINO_SPAWNPROTECTION		210
+#define DINO_SNOWCHECKER		  	211
+#define DINO_SNOWSPAWNER		  	212
 
 #define EXIT_DUMMY1				    243
 #define EXIT_DUMMY2				    244
@@ -99,9 +99,9 @@ int snowMinheight = 64;
 // second data entry is to store whether the dino is caught or not
 #define MAXDINODATA			4
 
-#define ISDINOSAUR 			1
-#define CAUGHT				  2
-#define BOXHEALTH			  3
+#define ISDINOSAUR			1
+#define CAUGHT				2
+#define BOXHEALTH			3
 int dinosaurs[MAXPLAYERS][MAXDINODATA];
 
 int curSpawnspot = 0;
