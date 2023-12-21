@@ -18,3 +18,9 @@ sv_debugveg (vegatation/decoration debugging)
 sv_reindeerpercentage (0 - 90) (amount of reindeer opposed to players)
 sv_maxveg (1 - 100)
 sv_alwayssnow (0 - 1)
+
+# Credits
+Coding - UberGewei & AF-Domains.net
+Sprite work - UberGewei & various other (CyberShark for the Reindeer sprite, or so I believe).
+Texture work - UberGewei
+
