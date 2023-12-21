@@ -9,6 +9,7 @@ Once a reindeer is captured, it still has a chance to escape by jumping and brea
 The task is therefore up to the hunters to keep the deer in their box. They can do this, for example, by standing on it.
 
 At least 3 players are needed for this gamemode to work, you'll also need to run it in Survival mode.
+It pretty much runs with every FFA .wad, as long as there's outside area's and enough spots to hide as a reindeer.
 Thanks for checking out this mode!
 
 # CVars
