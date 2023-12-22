@@ -1,5 +1,6 @@
 # ![TST4A0](https://github.com/UberGeweii/zdaemon_reindeerhunting/assets/83827407/72da59d8-988d-4bac-8fd0-308cf95d4942)  ![REINB3B7](https://github.com/UberGeweii/zdaemon_reindeerhunting/assets/83827407/ba2ef804-9a88-4c48-82ff-bc6fba1cf712) zdaemon_reindeerhunting ![REINB3B7](https://github.com/UberGeweii/zdaemon_reindeerhunting/assets/83827407/ba2ef804-9a88-4c48-82ff-bc6fba1cf712) ![TST4A0](https://github.com/UberGeweii/zdaemon_reindeerhunting/assets/83827407/72da59d8-988d-4bac-8fd0-308cf95d4942)
 A Christmas gamemode for ZDaemon, it's not been tested with other ports and it probably won't work with them either (yet).
+This was based off of Dinosaur Hunting, same gamemode but another theme.
 
 # Gamemode description
 Two teams are created at random. A team of reindeer and a team of hunters. 
